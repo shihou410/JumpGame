@@ -211,7 +211,7 @@ void update() {
   if (!collition_tile(std::floor(player_x + movex), player_y,
                       player_w * view_scale, player_h * view_scale)) {
     player_x += movex;
-  } 
+  }
   // else {
   //   int index = 0;
   //   if (movex > 0) {
@@ -222,7 +222,8 @@ void update() {
   //   player_x = index * (TILE_WIDTH * view_scale);
   // }
 
-  std::cout << "x: " << player_x << "---" << "y: " << player_y << std::endl;
+  std::cout << "x: " << player_x << "---"
+            << "y: " << player_y << std::endl;
 }
 
 void clear() {

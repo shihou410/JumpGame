@@ -15,3 +15,4 @@ target_include_directories(game2 PRIVATE ${SDL2_INCLUDE_DIRS} ${SDL2_IMAGE_INCLU
 # 链接 SDL2 库
 target_link_libraries(game2 ${SDL2_LIBRARIES} ${SDL2_IMAGE_LIBRARIES} ${BOX2D_INCLUDE_LIBRARIES})
 
+
