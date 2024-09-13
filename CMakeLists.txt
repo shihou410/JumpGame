@@ -1,4 +1,10 @@
 cmake_minimum_required(VERSION 3.5.0)
+
+# 指定 C++ 标准版本
+set(CMAKE_CXX_STANDARD 20)  # 例如使用 C++17，可以改成 11、14、20 等
+set(CMAKE_CXX_STANDARD_REQUIRED True)  # 强制使用该标准版本
+set(CMAKE_CXX_EXTENSIONS OFF)  # 禁用 GNU 扩展
+
 project(game2 VERSION 0.1.0 LANGUAGES C CXX)
 # 查找SDL2包
 find_package(PkgConfig REQUIRED)

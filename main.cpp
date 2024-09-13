@@ -10,55 +10,25 @@
 #include <SDL2/SDL_stdinc.h>
 #include <SDL2/SDL_timer.h>
 #include <SDL2/SDL_video.h>
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <ostream>
+#include <random>
 #include <strings.h>
+#include <valarray>
 
 /*------------Consfig---------------*/
 const char *GameName = "跳一跳";
-const int TILE_WIDTH = 18;
-const int TILE_HEIGHT = 18;
+const int TILE_WIDTH = 36;
+const int TILE_HEIGHT = 36;
 const int WINDOW_WIDTH = 540;
 const int WINDOW_HEIGHT = 432;
 const int TILE_ROW = 12;
 const int TILE_CLOUMN = 15;
-/*----------------------*/
-
-/*----------Player------------*/
-int player_x = 50;
-int player_y = 50;
-int player_w = 18;
-int player_h = 18;
-int player_image_index = 0;
-int player_image_nums = 2;
-int player_vx = 0.0f;
-int player_vy = 0.0f;
-
-int player_jumpSpeed = -15;
-int player_moveSpeed = 5;
-
-bool onGround = false;
-/*----------------------------*/
-
-/*----------Textures------------*/
-SDL_Texture *tex_tile = nullptr;
-SDL_Texture *tex_actor = nullptr;
-
-/*----------------------*/
-
-/*----------Enums------------*/
-enum TILE_TYPE {
-  ground = 0,
-};
-/*----------------------*/
-
-/*----------Collition------------*/
-bool collition_tile(float, float, float, float);
-
 /*----------------------*/
 
 /*----------Game------------*/
@@ -68,7 +38,7 @@ SDL_Rect srcrect;
 SDL_Rect dstrect;
 // SDL_FRect dstrectF;
 SDL_Event event;
-int view_scale = 2;
+int view_scale = 1;
 bool run = true;
 
 float gravity = 1;
@@ -83,6 +53,51 @@ void update();
 void clear();
 /*----------------------*/
 
+/*----------资源------------*/
+SDL_Texture *tex_tile = nullptr;
+SDL_Texture *tex_actor = nullptr;
+/*----------------------*/
+
+/*----------随机------------*/
+std::random_device rd;
+std::mt19937 gen(rd());
+/*----------------------*/
+
+/*----------Player------------*/
+int player_x = 50;
+int player_y = 50;
+int player_w = 36;
+int player_h = 36;
+int player_image_index = 0;
+int player_image_nums = 2;
+int player_vx = 0.0f;
+int player_vy = 0.0f;
+
+int player_jumpSpeed = -15;
+int player_moveSpeed = 5;
+
+bool onGround = false;
+
+//眨眼随机范围
+std::uniform_int_distribution<int> countDownRange(120, 300);
+int countDown = countDownRange(gen);
+/*----------------------------*/
+
+/*----------Enums------------*/
+enum TILE_TYPE {
+  ground = 0,
+};
+/*----------------------*/
+
+/*----------Collition------------*/
+bool collition_tile(int, int, int, int);
+
+/*----------------------*/
+
+/*----------utils------------*/
+int sign(int val) { return (0 < val) - (val < 0); }
+/*----------------------*/
+
 int map[TILE_ROW][TILE_CLOUMN] = {
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
@@ -94,7 +109,7 @@ int map[TILE_ROW][TILE_CLOUMN] = {
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
     {0, 0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
     {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}};
 
 int main(int, char **) {
@@ -184,19 +199,42 @@ void render() {
 }
 
 void update() {
+
   player_vy += gravity;
-  if (!collition_tile(player_x, std::floor(player_y + player_vy),
-                      player_w * view_scale, player_h * view_scale)) {
+
+  int playerW = player_w * view_scale;
+  int playerH = player_h * view_scale;
+
+  if (!collition_tile(player_x, player_y + player_vy, playerW, playerH)) {
     player_y += player_vy;
     onGround = false;
   } else {
-    if (player_vy > 0) {
+    // 精确碰撞
+    int move_count = std::abs(player_vy);
+    int move_num = sign(player_vy);
+
+    for (int i = 0; i < move_count; i++) {
+      if (!collition_tile(player_x, player_y + move_num, playerW, playerH)) {
+        player_y += move_num;
+      } else {
+        if (move_num < 0) {
+          player_vy = 0;
+        }
+        break;
+      }
+    }
+
+    //落到地面上
+    if (move_num > 0) {
       onGround = true;
       player_vy = 0;
     }
   }
 
-  player_image_index = static_cast<int>(gameTime) % 2;
+  if (!--countDown) {
+    player_image_index = int(!player_image_index);
+    countDown = player_image_index ? 10 : countDownRange(gen);
+  }
 
   int left = KeyStatus[SDL_SCANCODE_A];
   int right = KeyStatus[SDL_SCANCODE_D];
@@ -208,22 +246,19 @@ void update() {
   }
 
   int movex = h * player_moveSpeed;
-  if (!collition_tile(std::floor(player_x + movex), player_y,
-                      player_w * view_scale, player_h * view_scale)) {
+  if (!collition_tile(player_x + movex, player_y, playerW, playerH)) {
     player_x += movex;
+  } else {
+    int move_count = abs(movex);
+    int move_num = sign(movex);
+    for (int i = 0; i < move_count; i++) {
+      if (!collition_tile(player_x + move_num, player_y, playerW, playerH)) {
+        player_x += move_num;
+      } else {
+        break;
+      }
+    }
   }
-  // else {
-  //   int index = 0;
-  //   if (movex > 0) {
-  //     index = int(player_x + movex) / (TILE_WIDTH * view_scale);
-  //   } else {
-  //     index = int(player_x - movex) / (TILE_WIDTH * view_scale);
-  //   }
-  //   player_x = index * (TILE_WIDTH * view_scale);
-  // }
-
-  std::cout << "x: " << player_x << "---"
-            << "y: " << player_y << std::endl;
 }
 
 void clear() {
@@ -234,19 +269,58 @@ void clear() {
   IMG_Quit();
 }
 
-bool collition_tile(float x, float y, float w, float h) {
-  int lt_x = x / (TILE_WIDTH * view_scale);
-  int lt_y = y / (TILE_HEIGHT * view_scale);
+bool collition_tile(int x, int y, int w, int h) {
+  int mapWidth = TILE_CLOUMN;
+  int mapHeight = TILE_ROW;
 
-  int lb_x = x / (TILE_WIDTH * view_scale);
-  int lb_y = (y + h) / (TILE_HEIGHT * view_scale);
+  int tile_width = TILE_WIDTH * view_scale;
+  int tile_height = TILE_HEIGHT * view_scale;
 
-  int rt_x = (x + w) / (TILE_WIDTH * view_scale);
-  int rt_y = y / (TILE_HEIGHT * view_scale);
+  SDL_Rect self_box = {x, y, w, h};
 
-  int rb_x = (x + w) / (TILE_WIDTH * view_scale);
-  int rb_y = (y + h) / (TILE_HEIGHT * view_scale);
+  // 检测左上角的tile
+  int lt_x = x / tile_width;
+  int lt_y = y / tile_height;
+  if (map[lt_y][lt_x]) {
+    SDL_Rect lt_box = {lt_x * tile_width, lt_y * tile_height, tile_width,
+                       tile_height};
+    if (SDL_HasIntersection(&self_box, &lt_box)) {
+      return true;
+    }
+  }
 
-  return map[lt_y][lt_x] || map[lb_y][lb_x] || map[rt_y][rt_x] ||
-         map[rb_y][rb_x];
+  // 检测右上角的tile
+  int rt_x = (x + w) / tile_width;
+  int rt_y = y / tile_height;
+  if (map[rt_y][rt_x]) {
+    SDL_Rect rt_box = {rt_x * tile_width, rt_y * tile_height, tile_width,
+                       tile_height};
+    if (SDL_HasIntersection(&self_box, &rt_box)) {
+      return true;
+    }
+  }
+
+  // 检测左下角的tile
+  int lb_x = x / tile_width;
+  int lb_y = (y + h) / tile_height;
+  if (map[lb_y][lb_x]) {
+    SDL_Rect lb_box = {lb_x * tile_width, lb_y * tile_height, tile_width,
+                       tile_height};
+    if (SDL_HasIntersection(&self_box, &lb_box)) {
+      return true;
+    }
+  }
+
+  // 检测右下角的tile
+  int rb_x = (x + w) / tile_width;
+  int rb_y = (y + h) / tile_height;
+  if (map[rb_y][rb_x]) {
+    SDL_Rect rb_box = {rb_x * tile_width, rb_y * tile_height, tile_width,
+                       tile_height};
+    if (SDL_HasIntersection(&self_box, &rb_box)) {
+      return true;
+    }
+  }
+
+  return false; // 如果所有 4 个角都没有碰撞
 }
