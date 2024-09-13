@@ -21,6 +21,16 @@
 #include <strings.h>
 #include <valarray>
 
+/*------------枚举---------------*/
+enum TILE_TYPE {
+  none = 0,
+  ground = 1,
+
+  box1 = 50,
+};
+
+/*----------------------*/
+
 /*------------Consfig---------------*/
 const char *GameName = "跳一跳";
 const int TILE_WIDTH = 36;
@@ -56,6 +66,7 @@ void clear();
 /*----------资源------------*/
 SDL_Texture *tex_tile = nullptr;
 SDL_Texture *tex_actor = nullptr;
+SDL_Texture *tex_box = nullptr;
 /*----------------------*/
 
 /*----------随机------------*/
@@ -78,38 +89,64 @@ int player_moveSpeed = 5;
 
 bool onGround = false;
 
+bool player_hflip = false;
+
 //眨眼随机范围
 std::uniform_int_distribution<int> countDownRange(120, 300);
 int countDown = countDownRange(gen);
 /*----------------------------*/
 
-/*----------Enums------------*/
-enum TILE_TYPE {
-  ground = 0,
-};
-/*----------------------*/
-
 /*----------Collition------------*/
+struct CollitionInfo {
+  TILE_TYPE type;
+  int tx, ty;
+  bool right;
+  bool left;
+  bool top;
+  bool bottom;
+};
+
 bool collition_tile(int, int, int, int);
 
+CollitionInfo myCollitionInfo;
+void resetCollitionInfo();
 /*----------------------*/
 
 /*----------utils------------*/
 int sign(int val) { return (0 < val) - (val < 0); }
 /*----------------------*/
 
+/*----------相机------------*/
+
+/*----------------------*/
+
+/*----------Item------------*/
+struct ITEM {
+  TILE_TYPE type;
+  int tx, ty;
+  int px, py;
+  int vy;
+  bool isRun;
+};
+
+ITEM items[10];
+int Item_Count = 0;
+
+void updateItem(int index);
+/*----------------------*/
+
 int map[TILE_ROW][TILE_CLOUMN] = {
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1},
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
     {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0},
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-    {0, 0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0},
-    {0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0, 50, 0, 0, 0, 0, 1, 1, 1},
+    {0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0},
+    {0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0},
     {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}};
 
 int main(int, char **) {
@@ -161,8 +198,32 @@ void init() {
     std::cout << "纹理创建失败: " << IMG_GetError() << std::endl;
     exit(1);
   }
-
+  tex_box = IMG_LoadTexture(gRender, "img/box.png");
+  if (tex_box == nullptr) {
+    std::cout << "纹理创建失败: " << IMG_GetError() << std::endl;
+    exit(1);
+  }
   startTick = SDL_GetTicks();
+
+  //初始化游戏
+  for (int i = 0; i < TILE_ROW; i++) {
+    for (int j = 0; j < TILE_CLOUMN; j++) {
+      int type = map[i][j];
+      if (type >= TILE_TYPE::box1) {
+        items[Item_Count].type = static_cast<TILE_TYPE>(type);
+        items[Item_Count].tx = j;
+        items[Item_Count].ty = i;
+        items[Item_Count].px = j * TILE_WIDTH;
+        items[Item_Count].py = i * TILE_HEIGHT;
+        items[Item_Count].vy = 0;
+        items[Item_Count].isRun = false;
+
+        Item_Count++;
+      }
+    }
+  }
+
+  resetCollitionInfo();
 }
 
 void handleInput() {
@@ -173,33 +234,7 @@ void handleInput() {
   }
 }
 
-void render() {
-
-  SDL_SetRenderDrawColor(gRender, 255, 255, 255, 255);
-  SDL_RenderClear(gRender);
-
-  // 绘制地图
-  for (int i = 0; i < TILE_ROW; i++) {
-    for (int j = 0; j < TILE_CLOUMN; j++) {
-      if (map[i][j] == 1) {
-        int x = j * TILE_WIDTH * view_scale;
-        int y = i * TILE_HEIGHT * view_scale;
-        srcrect = {0, 0, TILE_WIDTH, TILE_HEIGHT};
-        dstrect = {x, y, TILE_WIDTH * view_scale, TILE_HEIGHT * view_scale};
-        SDL_RenderCopy(gRender, tex_tile, &srcrect, &dstrect);
-      }
-    }
-  }
-
-  srcrect = {player_w * player_image_index, 0, TILE_WIDTH, TILE_HEIGHT};
-  dstrect = {player_x, player_y, player_w * view_scale, player_h * view_scale};
-  SDL_RenderCopy(gRender, tex_actor, &srcrect, &dstrect);
-
-  SDL_RenderPresent(gRender);
-}
-
 void update() {
-
   player_vy += gravity;
 
   int playerW = player_w * view_scale;
@@ -241,8 +276,23 @@ void update() {
   bool startJump = KeyStatus[SDL_SCANCODE_SPACE];
   int h = right - left;
 
+  if (h < 0) {
+    player_hflip = true;
+  } else if (h > 0) {
+    player_hflip = false;
+  }
+
   if (onGround && startJump) {
     player_vy = player_jumpSpeed;
+  }
+
+  if (myCollitionInfo.top) {
+    int index = myCollitionInfo.type - TILE_TYPE::box1;
+    bool isrun = items[index].isRun;
+    if (!isrun) {
+      items[index].isRun = !isrun;
+      items[index].vy = -5;
+    }
   }
 
   int movex = h * player_moveSpeed;
@@ -259,6 +309,52 @@ void update() {
       }
     }
   }
+
+  for (int i = 0; i < Item_Count; i++) {
+    updateItem(i);
+  }
+
+  resetCollitionInfo();
+}
+
+void render() {
+
+  SDL_SetRenderDrawColor(gRender, 115, 76, 35, 255);
+  SDL_RenderClear(gRender);
+
+  // 绘制地图
+  for (int i = 0; i < TILE_ROW; i++) {
+    for (int j = 0; j < TILE_CLOUMN; j++) {
+      if (map[i][j] == 1) {
+        int x = j * TILE_WIDTH * view_scale;
+        int y = i * TILE_HEIGHT * view_scale;
+        srcrect = {0, 0, TILE_WIDTH, TILE_HEIGHT};
+        dstrect = {x, y, TILE_WIDTH * view_scale, TILE_HEIGHT * view_scale};
+        SDL_RenderCopy(gRender, tex_tile, &srcrect, &dstrect);
+      }
+
+      if (map[i][j] >= TILE_TYPE::box1) {
+        int index = map[i][j] - TILE_TYPE::box1;
+
+        int x = items[index].px;
+        int y = items[index].py;
+        // int x = j * TILE_WIDTH * view_scale;
+        // int y = i * TILE_HEIGHT * view_scale;
+        srcrect = {0, 0, TILE_WIDTH, TILE_HEIGHT};
+        dstrect = {x, y, TILE_WIDTH * view_scale, TILE_HEIGHT * view_scale};
+        SDL_RenderCopy(gRender, tex_box, &srcrect, &dstrect);
+      }
+    }
+  }
+
+  srcrect = {player_w * player_image_index, 0, TILE_WIDTH, TILE_HEIGHT};
+  dstrect = {player_x, player_y, player_w * view_scale, player_h * view_scale};
+
+  int angle = 0;
+  SDL_RenderCopyEx(gRender, tex_actor, &srcrect, &dstrect, angle, nullptr,
+                   player_hflip ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE);
+
+  SDL_RenderPresent(gRender);
 }
 
 void clear() {
@@ -278,6 +374,8 @@ bool collition_tile(int x, int y, int w, int h) {
 
   SDL_Rect self_box = {x, y, w, h};
 
+  bool isCollition = false;
+
   // 检测左上角的tile
   int lt_x = x / tile_width;
   int lt_y = y / tile_height;
@@ -285,7 +383,11 @@ bool collition_tile(int x, int y, int w, int h) {
     SDL_Rect lt_box = {lt_x * tile_width, lt_y * tile_height, tile_width,
                        tile_height};
     if (SDL_HasIntersection(&self_box, &lt_box)) {
-      return true;
+      isCollition = true;
+
+      myCollitionInfo.left = (lt_box.x + lt_box.w) > self_box.x;
+      myCollitionInfo.top = (lt_box.y + lt_box.h) > self_box.y;
+      myCollitionInfo.type = static_cast<TILE_TYPE>(map[lt_y][lt_x]);
     }
   }
 
@@ -296,7 +398,11 @@ bool collition_tile(int x, int y, int w, int h) {
     SDL_Rect rt_box = {rt_x * tile_width, rt_y * tile_height, tile_width,
                        tile_height};
     if (SDL_HasIntersection(&self_box, &rt_box)) {
-      return true;
+      isCollition = true;
+
+      myCollitionInfo.right = self_box.x + self_box.w > rt_box.x;
+      myCollitionInfo.top = (rt_box.y + rt_box.h) > self_box.y;
+      myCollitionInfo.type = static_cast<TILE_TYPE>(map[rt_y][rt_x]);
     }
   }
 
@@ -307,7 +413,11 @@ bool collition_tile(int x, int y, int w, int h) {
     SDL_Rect lb_box = {lb_x * tile_width, lb_y * tile_height, tile_width,
                        tile_height};
     if (SDL_HasIntersection(&self_box, &lb_box)) {
-      return true;
+      isCollition = true;
+
+      myCollitionInfo.left = (lb_box.x + lb_box.w) > self_box.x;
+      myCollitionInfo.bottom = self_box.y + self_box.h > lb_box.y;
+      myCollitionInfo.type = static_cast<TILE_TYPE>(map[lb_y][lb_x]);
     }
   }
 
@@ -318,9 +428,36 @@ bool collition_tile(int x, int y, int w, int h) {
     SDL_Rect rb_box = {rb_x * tile_width, rb_y * tile_height, tile_width,
                        tile_height};
     if (SDL_HasIntersection(&self_box, &rb_box)) {
-      return true;
+      isCollition = true;
+
+      myCollitionInfo.right = self_box.x + self_box.w > rb_box.x;
+      myCollitionInfo.bottom = self_box.y + self_box.h > rb_box.y;
+      myCollitionInfo.type = static_cast<TILE_TYPE>(map[lb_y][lb_x]);
     }
   }
 
-  return false; // 如果所有 4 个角都没有碰撞
+  return isCollition;
+}
+
+void resetCollitionInfo() {
+  myCollitionInfo.type = TILE_TYPE::none;
+  myCollitionInfo.tx = 0;
+  myCollitionInfo.ty = 0;
+  myCollitionInfo.left = false;
+  myCollitionInfo.bottom = false;
+  myCollitionInfo.top = false;
+  myCollitionInfo.right = false;
+}
+
+void updateItem(int index) {
+  if (!items[index].isRun)
+    return;
+  int maxY = items[index].ty * TILE_HEIGHT;
+  items[index].vy += gravity;
+  items[index].py += items[index].vy;
+  if (items[index].py > maxY) {
+    items[index].py = maxY;
+    items[index].vy = 0;
+    items[index].isRun = false;
+  }
 }
